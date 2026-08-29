@@ -1,0 +1,132 @@
+// ============================================================
+// CaseGrid — Prisma Schema
+// Database: PostgreSQL
+// Tables: User, Document, ChainBlock, AuditLog
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ──────────────────────────────────────────────────
+
+/// Roles for RBAC (Role-Based Access Control)
+enum Role {
+  ADMIN
+  INVESTIGATING_OFFICER
+  LEGAL_OFFICER
+  JUDGE
+}
+
+/// Supported document types in the system
+enum DocType {
+  FIR
+  CHARGE_SHEET
+  WITNESS_STATEMENT
+  FORENSIC_REPORT
+  COURT_FILING
+  OTHER
+}
+
+// ── Users ──────────────────────────────────────────────────
+
+/// System users — law enforcement, legal, judiciary, admin
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  badgeNumber  String? // For officers
+  department   String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  documents Document[] @relation("UploadedBy")
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+// ── Documents ──────────────────────────────────────────────
+
+/// Document metadata — actual encrypted file lives in MinIO
+model Document {
+  id           String  @id @default(uuid())
+  caseId       String // External case reference number (e.g. "FIR-2026-MH-001")
+  docType      DocType
+  title        String
+  description  String?
+  originalName String // Original filename from upload
+  mimeType     String
+  fileSize     Int // File size in bytes
+  minioKey     String // Object key in MinIO bucket
+  encryptionIV String // AES-256-CBC initialization vector (stored as hex)
+
+  // Who uploaded this document
+  uploadedById String
+  uploadedBy   User   @relation("UploadedBy", fields: [uploadedById], references: [id])
+
+  // Link to integrity chain block
+  chainBlockId String?     @unique
+  chainBlock   ChainBlock? @relation(fields: [chainBlockId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([caseId])
+  @@map("documents")
+}
+
+// ── Integrity Chain (Custom Blockchain) ────────────────────
+
+/// Each block stores a document hash + actor info, linked to the previous block
+/// This forms a tamper-evident chain — if any block is modified, the chain breaks
+model ChainBlock {
+  id           String   @id @default(uuid())
+  blockIndex   Int      @unique // Sequential block number (0 = genesis)
+  timestamp    DateTime @default(now())
+  docId        String // Reference to the document
+  fileHash     String // SHA-256 hash of the ORIGINAL (unencrypted) file
+  actorId      String // User who triggered this action
+  actorEmail   String // Denormalized for audit readability
+  action       String // "GENESIS" | "UPLOAD" | "UPDATE" | "DELETE"
+  metadata     Json? // Any extra context (e.g. case ID, doc type)
+  previousHash String // Hash of the previous block ("0" for genesis)
+  blockHash    String // SHA-256(blockIndex + timestamp + docId + fileHash + actorId + action + previousHash)
+
+  // Reverse relation to Document
+  document Document?
+
+  @@index([docId])
+  @@map("chain_blocks")
+}
+
+// ── Audit Logs ─────────────────────────────────────────────
+
+/// Every system action is logged here for compliance and forensics
+model AuditLog {
+  id           String   @id @default(uuid())
+  actorId      String
+  actor        User     @relation(fields: [actorId], references: [id])
+  action       String // "LOGIN" | "UPLOAD" | "VIEW" | "DOWNLOAD" | "VERIFY" | "VERIFY_FAIL"
+  resourceType String? // "DOCUMENT" | "USER" | etc.
+  resourceId   String? // ID of the resource acted upon
+  result       String // "SUCCESS" | "FAILURE" | "HASH_MATCH" | "HASH_MISMATCH"
+  ipAddress    String?
+  userAgent    String?
+  details      Json? // Extra context
+  createdAt    DateTime @default(now())
+
+  @@index([actorId])
+  @@index([resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

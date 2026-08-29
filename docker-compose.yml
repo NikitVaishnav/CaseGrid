@@ -1,0 +1,97 @@
+# ============================================================
+# CaseGrid — Docker Compose (Local Development)
+# Run: docker-compose up --build
+# ============================================================
+
+services:
+  # ── PostgreSQL Database ────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: casegrid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-casegrid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-casegrid_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-casegrid_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-casegrid} -d ${POSTGRES_DB:-casegrid_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (S3-Compatible Object Storage) ───────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: casegrid-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-casegrid_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-casegrid_minio_secret}
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console UI
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend (Node.js + Express) ────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: casegrid-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-casegrid}:${POSTGRES_PASSWORD:-casegrid_secret}@postgres:5432/${POSTGRES_DB:-casegrid_db}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-casegrid_minio}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-casegrid_minio_secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-casegrid-documents}
+      MINIO_USE_SSL: "false"
+      JWT_SECRET: ${JWT_SECRET:-casegrid-jwt-super-secret-change-in-prod}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2}
+      INTEGRITY_PROVIDER: ${INTEGRITY_PROVIDER:-custom}
+      PORT: 5001
+      NODE_ENV: development
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # ── Frontend (React + Vite) ────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: casegrid-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:5001/api
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  postgres-data:
+  minio-data:
