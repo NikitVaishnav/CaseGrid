@@ -225,6 +225,4 @@ The current implementation focuses on the secure document lifecycle: login, uplo
 
 Planned production-facing improvements may include managed deployment, stronger operational monitoring, expanded administrative tooling, external identity-provider integration, and replacing or extending the custom integrity ledger with an enterprise blockchain provider.
 
-## License
 
-License information has not yet been specified.
