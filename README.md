@@ -223,6 +223,4 @@ CaseGrid uses multiple layers of protection:
 
 The current implementation focuses on the secure document lifecycle: login, upload, encrypted storage, metadata management, download, verification, and audit logging.
 
-Planned production-facing improvements may include managed deployment, stronger operational monitoring, expanded administrative tooling, external identity-provider integration, and replacing or extending the custom integrity ledger with an enterprise blockchain provider.
-
-
+Planned production facing improvements may include managed deployment, stronger operational monitoring, expanded administrative tooling, external identity-provider integration, and replacing or extending the custom integrity ledger with an enterprise blockchain provider.
