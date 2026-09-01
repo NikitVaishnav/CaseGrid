@@ -13,6 +13,7 @@ import {
   getDocument,
   downloadDocument,
   verifyDocument,
+  listCasesWithTimeline,
 } from './documents.controller.js';
 
 const router = Router();
@@ -38,6 +39,9 @@ router.post(
 
 // List all documents (all authenticated roles)
 router.get('/', authenticate, listDocuments);
+
+// List all cases with timeline history
+router.get('/cases/timeline', authenticate, listCasesWithTimeline);
 
 // Get a single document's metadata
 router.get('/:id', authenticate, getDocument);

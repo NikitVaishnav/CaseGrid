@@ -6,6 +6,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import UploadPage from './pages/UploadPage';
+import TimelinePage from './pages/TimelinePage';
+import AuditLogsPage from './pages/AuditLogsPage';
 
 export default function App() {
   return (
@@ -21,11 +23,17 @@ export default function App() {
               {/* Protected routes — all authenticated users */}
               <Route element={<ProtectedRoute />}>
                 <Route path="/" element={<DashboardPage />} />
+                <Route path="/timeline" element={<TimelinePage />} />
               </Route>
 
               {/* Protected routes — upload restricted to IO, LO, Admin */}
               <Route element={<ProtectedRoute allowedRoles={['INVESTIGATING_OFFICER', 'LEGAL_OFFICER', 'ADMIN']} />}>
                 <Route path="/upload" element={<UploadPage />} />
+              </Route>
+
+              {/* Protected routes — audit logs restricted to Admin & Judge */}
+              <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'JUDGE']} />}>
+                <Route path="/audit-logs" element={<AuditLogsPage />} />
               </Route>
 
               {/* Fallback */}

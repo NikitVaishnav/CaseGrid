@@ -51,6 +51,13 @@ export async function uploadDocument(req, res, next) {
     // ── Step 1: Hash the original (unencrypted) file ──────
     const fileHash = sha256(fileBuffer);
 
+    // ── Step 1.5: Officer Digital Signature Simulation ────
+    const crypto = await import('crypto');
+    const digitalSignature = crypto.default
+      .createHmac('sha256', process.env.JWT_SECRET || 'casegrid-jwt-super-secret')
+      .update(`${fileHash}:${req.user.id}:${req.user.email}:${Date.now()}`)
+      .digest('hex');
+
     // ── Step 2: Encrypt the file ──────────────────────────
     const { encrypted, iv } = encryptFile(fileBuffer);
 
@@ -66,7 +73,14 @@ export async function uploadDocument(req, res, next) {
       actorId: req.user.id,
       actorEmail: req.user.email,
       action: 'UPLOAD',
-      metadata: { caseId, docType, title },
+      metadata: { 
+        caseId, 
+        docType, 
+        title, 
+        digitalSignature: `SIG-SHA256-${digitalSignature.substring(0, 16).toUpperCase()}`,
+        signedBy: req.user.name,
+        badgeNumber: req.user.badgeNumber || 'OFFICER-REG'
+      },
     });
 
     // ── Step 5: Save document metadata to PostgreSQL ──────
@@ -317,3 +331,43 @@ export async function verifyDocument(req, res, next) {
     next(error);
   }
 }
+
+/**
+ * GET /api/documents/cases/timeline
+ * Get all cases grouped by caseId with full chronological document & block history.
+ */
+export async function listCasesWithTimeline(req, res, next) {
+  try {
+    const documents = await prisma.document.findMany({
+      orderBy: { createdAt: 'asc' },
+      include: {
+        uploadedBy: {
+          select: { id: true, name: true, email: true, role: true, badgeNumber: true },
+        },
+        chainBlock: true,
+      },
+    });
+
+    // Group documents by caseId
+    const casesMap = {};
+    for (const doc of documents) {
+      if (!casesMap[doc.caseId]) {
+        casesMap[doc.caseId] = {
+          caseId: doc.caseId,
+          createdAt: doc.createdAt,
+          documents: [],
+        };
+      }
+      casesMap[doc.caseId].documents.push(doc);
+    }
+
+    const cases = Object.values(casesMap).sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    return sendSuccess(res, { cases }, 'Case timelines retrieved');
+  } catch (error) {
+    next(error);
+  }
+}
+
